@@ -3353,10 +3353,11 @@ do
             return (y_cond and x_cond)
         end
 
-        function library:draggify(frame)
+        function library:draggify(frame, move_target)
             local dragging = false 
             local start_size = frame.Position
             local start 
+            local target = move_target or frame
 
             frame.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 
@@ -3367,7 +3368,7 @@ do
                     end
                     dragging = true
                     start = input.Position
-                    start_size = frame.Position
+                    start_size = target.Position
                 end
             end)
 
@@ -3389,17 +3390,17 @@ do
                         clamp(
                             start_size.X.Offset + (input.Position.X - start.X),
                             0,
-                            viewport_x - frame.Size.X.Offset
+                            viewport_x - target.Size.X.Offset
                         ),
                         0,
                         math.clamp(
                             start_size.Y.Offset + (input.Position.Y - start.Y),
                             0,
-                            viewport_y - frame.Size.Y.Offset
+                            viewport_y - target.Size.Y.Offset
                         )
                     )
 
-                    library:tween(frame, {Position = current_position}, Enum.EasingStyle.Linear, 0.05)
+                    library:tween(target, {Position = current_position}, Enum.EasingStyle.Linear, 0.05)
                     library:close_element()
                 end
             end)
@@ -3609,10 +3610,10 @@ do
             local viewport = (camera and camera.ViewportSize) or viewport_size or Vector2.new(1920, 1080)
             viewport_size = viewport
             local mobile_min_w, mobile_min_h = 280, 260
-            local mobile_max_w, mobile_max_h = 640, 470
+            local mobile_max_w, mobile_max_h = 720, 500
             local mobile_size = dim2(
-                0, clamp(floor(viewport.X * 0.75), mobile_min_w, mobile_max_w),
-                0, clamp(floor(viewport.Y * 0.70), mobile_min_h, mobile_max_h)
+                0, clamp(floor(viewport.X * 0.78), mobile_min_w, mobile_max_w),
+                0, clamp(floor(viewport.Y * 0.76), mobile_min_h, mobile_max_h)
             )
 
             local cfg = { 
@@ -3670,6 +3671,28 @@ do
 
                 
                 local side_width = is_mobile and 130 or 196
+
+                -- [MOBILE/FIX] the window Frame can't be Active on touch (every tap/scroll in the
+                -- content would start a drag), so give the title strip its own invisible drag
+                -- zone that moves the whole window. PC keeps the original frame-wide draggify.
+                if is_mobile then
+                    local drag_zone = library:create( "TextButton" , {
+                        Name = "_MeowDragZone";
+                        BackgroundTransparency = 1;
+                        Text = "";
+                        AutoButtonColor = false;
+                        FontFace = fonts.font;
+                        TextSize = 1;
+                        BorderColor3 = rgb(0, 0, 0);
+                        BorderSizePixel = 0;
+                        Size = dim2(0, side_width, 0, 56);
+                        Position = dim2(0, 0, 0, 0);
+                        ZIndex = 20;
+                        Parent = items[ "main" ];
+                    });
+                    library:draggify(drag_zone, items[ "main" ]);
+                end
+
                 items[ "side_frame" ] = library:create( "Frame" , {
                     Parent = items[ "main" ];
                     BackgroundTransparency = 1;
@@ -3690,7 +3713,9 @@ do
                     BackgroundColor3 = rgb(21, 21, 23)
                 });
                 
-                items[ "button_holder" ] = library:create( "Frame" , {
+                -- [MOBILE/FIX] on mobile the window is ~70% viewport height, so the sidebar
+                -- (Configs / Settings at the bottom) was clipped. Use a scrolling frame there.
+                items[ "button_holder" ] = library:create( is_mobile and "ScrollingFrame" or "Frame" , {
                     Parent = items[ "side_frame" ];
                     Name = "\0";
                     BackgroundTransparency = 1;
@@ -3715,6 +3740,15 @@ do
                     PaddingLeft = dim(0, 10)
                 });
 
+                if is_mobile then
+                    items[ "button_holder" ].CanvasSize = dim2(0, 0, 0, 0);
+                    items[ "button_holder" ].AutomaticCanvasSize = Enum.AutomaticSize.Y;
+                    items[ "button_holder" ].ScrollingDirection = Enum.ScrollingDirection.Y;
+                    items[ "button_holder" ].ScrollBarThickness = 3;
+                    items[ "button_holder" ].ScrollBarImageColor3 = rgb(60, 60, 64);
+                    items[ "button_holder" ].BorderSizePixel = 0;
+                end
+
                 local accent = themes.preset.accent
                 local tr, tg, tb = math.floor(accent.R * 255), math.floor(accent.G * 255), math.floor(accent.B * 255)
                 items[ "title" ] = library:create( "TextLabel" , {
@@ -3728,7 +3762,7 @@ do
                     TextColor3 = themes.preset.accent;
                     BorderSizePixel = 0;
                     RichText = true;
-                    TextSize = 30;
+                    TextSize = is_mobile and 20 or 30;
                     BackgroundColor3 = rgb(255, 255, 255)
                 }); library:apply_theme(items[ "title" ], "accent", "TextColor3");
                 
@@ -3885,8 +3919,8 @@ do
                         BorderSizePixel = 0;
                         AutoButtonColor = false;
                         FontFace = fonts.font;
-                        Text = "UI";
-                        TextSize = 15;
+                        Text = "";
+                        TextSize = 1;
                         TextColor3 = themes.preset.accent;
                         ZIndex = 5;
                         Parent = btn_gui;
@@ -3902,6 +3936,26 @@ do
                         Thickness = 1.5;
                         Parent = btn;
                     }); library:apply_theme(btn_stroke, "accent", "Color");
+
+                    -- hamburger glyph: 3 short accent bars instead of cheap "UI" text
+                    local bar_widths = {18, 13, 18}
+                    for i = 1, 3 do
+                        local bar = library:create( "Frame" , {
+                            AnchorPoint = vec2(0.5, 0.5);
+                            Position = dim2(0.5, 0, 0.5, (i - 2) * 6);
+                            Size = dim2(0, bar_widths[i], 0, 2.5);
+                            BackgroundColor3 = themes.preset.accent;
+                            BorderColor3 = rgb(0, 0, 0);
+                            BorderSizePixel = 0;
+                            ZIndex = 6;
+                            Parent = btn;
+                        }); library:apply_theme(bar, "accent", "BackgroundColor3");
+
+                        library:create( "UICorner" , {
+                            Parent = bar;
+                            CornerRadius = dim(0, 999)
+                        });
+                    end
 
                     -- only TouchTap: a tap would also fire MouseButton1Click and double-toggle
                     btn.TouchTap:Connect(function()
@@ -4052,9 +4106,9 @@ do
                         AutoButtonColor = false;
                         BackgroundTransparency = 1;
                         Name = "\0";
-                        Size = dim2(1, 0, 0, 35);
+                        Size = dim2(1, 0, 0, is_mobile and 30 or 35);
                         BorderSizePixel = 0;
-                        TextSize = 16;
+                        TextSize = is_mobile and 14 or 16;
                         BackgroundColor3 = rgb(29, 29, 29)
                     });
                     
@@ -4085,7 +4139,7 @@ do
                         TextXAlignment = Enum.TextXAlignment.Left;
                         BorderSizePixel = 0;
                         AutomaticSize = Enum.AutomaticSize.X;
-                        TextSize = 16;
+                        TextSize = is_mobile and 14 or 16;
                         BackgroundColor3 = rgb(255, 255, 255)
                     });
                     
@@ -6359,15 +6413,19 @@ do
         end
 
         function library:keybind(options) 
+            local def = options.default
             local cfg = {
                 flag = options.flag or library:next_flag(),
                 callback = options.callback or function() end,
                 name = options.name or nil, 
                 ignore_key = options.ignore or false, 
 
-                key = options.key or nil, 
+                -- [MOBILE/FIX] default used to be fed straight into `active`, so an Enum default
+                -- (e.g. Enum.KeyCode.X) enabled the feature on creation. EnumItem = the key,
+                -- boolean = the active state.
+                key = options.key or (typeof(def) == "EnumItem" and def or nil), 
                 mode = options.mode or "Toggle",
-                active = options.default or false, 
+                active = type(def) == "boolean" and def or false, 
 
                 open = false,
                 binding = nil, 
@@ -6624,7 +6682,9 @@ do
                     cfg.set_mode(cfg.mode) 
                 end 
 
-                cfg.callback(cfg.active)
+                if not cfg._initialising then
+                    cfg.callback(cfg.active)
+                end
 
                 local text = tostring(cfg.key) ~= "Enums" and (keys[cfg.key] or tostring(cfg.key):gsub("Enum.", "")) or nil
                 local __text = text and (tostring(text):gsub("KeyCode.", ""):gsub("UserInputType.", ""))
@@ -6691,7 +6751,12 @@ do
                 end
             end)
             
+            -- [FIX] apply the initial state without firing the callback: previously a keybind
+            -- with an Enum default called its callback on creation (this auto-enabled
+            -- Fake Position / aimbot and broke the Menu Toggle Keybind).
+            cfg._initialising = true
             cfg.set({mode = cfg.mode, active = cfg.active, key = cfg.key})           
+            cfg._initialising = nil
             config_flags[cfg.flag] = cfg.set
 
             return setmetatable(cfg, library)
@@ -7483,8 +7548,13 @@ do
     secAimbot:keybind({
         name     = "Aim Keybind",
         mode     = "Hold",
-        default  = Enum.KeyCode.E,
-        callback = function(active) flags.aimbot_active = active end
+        key      = Enum.KeyCode.E,
+        default  = false,
+        callback = function(active)
+            if type(active) == "boolean" then
+                flags.aimbot_active = active
+            end
+        end
     })
 
     secAimbot:slider({
@@ -9231,8 +9301,13 @@ do
     secFP:keybind({
         name     = "Toggle Keybind",
         mode     = "Toggle",
-        default  = Enum.KeyCode.X,
-        callback = function() getgenv().ToggleFakePosition() end
+        key      = Enum.KeyCode.X,
+        default  = false,
+        callback = function(state)
+            if type(state) == "boolean" then
+                setFakePosition(state)
+            end
+        end
     })
 
     secFP:slider({
@@ -9678,10 +9753,11 @@ do
 
     secTheme:keybind({
         name = "Menu Toggle Keybind",
-        default = Enum.KeyCode.RightShift,
+        key = Enum.KeyCode.RightShift,
+        default = true,
         mode = "Toggle",
         callback = function(state)
-            if window and window.toggle_menu then
+            if type(state) == "boolean" and window and window.toggle_menu then
                 window.toggle_menu(state)
             end
         end
